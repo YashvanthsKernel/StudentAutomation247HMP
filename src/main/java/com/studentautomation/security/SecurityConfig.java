@@ -1,7 +1,11 @@
 package com.studentautomation.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.studentautomation.dto.response.ApiResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -26,13 +30,16 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final UserDetailsService userDetailsService;
     private final PasswordEncoder passwordEncoder;
+    private final ObjectMapper objectMapper;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
                           UserDetailsService userDetailsService,
-                          PasswordEncoder passwordEncoder) {
+                          PasswordEncoder passwordEncoder,
+                          ObjectMapper objectMapper) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.userDetailsService = userDetailsService;
         this.passwordEncoder = passwordEncoder;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -59,34 +66,71 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
 
+                .exceptionHandling(exception -> exception
+
+                        /*
+                         * Handles 401 Unauthorized errors.
+                         *
+                         * Purpose:
+                         * This runs when user does not send token
+                         * or sends invalid/expired token.
+                         */
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                            response.setCharacterEncoding("UTF-8");
+
+                            objectMapper.writeValue(
+                                    response.getWriter(),
+                                    ApiResponse.failure("Authentication required. Please login first.")
+                            );
+                        })
+
+                        /*
+                         * Handles 403 Forbidden errors.
+                         *
+                         * Purpose:
+                         * This runs when user is logged in,
+                         * but does not have the required role.
+                         */
+                        .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                            response.setCharacterEncoding("UTF-8");
+
+                            objectMapper.writeValue(
+                                    response.getWriter(),
+                                    ApiResponse.failure("You do not have permission to access this API.")
+                            );
+                        })
+                )
+
                 .authorizeHttpRequests(auth -> auth
 
                         // Public APIs
                         .requestMatchers("/api/auth/**").permitAll()
 
-                        // Future Super Admin APIs
+                        // Super Admin APIs
                         .requestMatchers("/api/super-admin/**")
                         .hasRole("SUPER_ADMIN")
 
-                        // Future Admin APIs
+                        // Admin APIs
                         .requestMatchers("/api/admin/**")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN")
 
-                        // Future Teacher self APIs
+                        // Teacher self APIs
                         .requestMatchers("/api/teacher/**")
                         .hasRole("TEACHER")
 
-                        // Future Student self APIs
+                        // Student self APIs
                         .requestMatchers("/api/student/**")
                         .hasRole("STUDENT")
 
-                        // Current Teacher CRUD APIs
-                        // For now, only Admin and Super Admin should manage teachers
+                        // Teacher management APIs
                         .requestMatchers("/api/teachers/**")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN")
 
-                        // Current Student CRUD APIs
-                        // For now, only Admin and Super Admin should manage students
+                        // Student management APIs
                         .requestMatchers("/api/students/**")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN")
 

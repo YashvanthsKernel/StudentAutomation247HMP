@@ -69,6 +69,16 @@ public class User {
 
     private LocalDateTime updatedAt;
 
+    /**
+     * Full name of the user.
+     *
+     * Purpose:
+     * This is used for Admin and Super Admin accounts.
+     * Student and Teacher profile details will be stored in their own tables.
+     */
+    @Column(length = 100)
+    private String name;
+
     public User() {
     }
 
@@ -150,5 +160,13 @@ public class User {
 
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
     }
 }

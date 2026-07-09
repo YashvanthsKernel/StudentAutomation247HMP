@@ -61,4 +61,14 @@ public interface TeacherRepository extends JpaRepository<Teacher, Long> {
      * @return list of teachers from given department
      */
     List<Teacher> findByDepartment(String department);
-}
+    /**
+     * Finds a teacher profile using linked user email.
+     *
+     * Purpose:
+     * This is used for GET /api/teacher/me.
+     * The logged-in teacher's email comes from JWT token.
+     *
+     * @param email logged-in user's email
+     * @return teacher profile if found
+     */
+    Optional<Teacher> findByUser_Email(String email);}

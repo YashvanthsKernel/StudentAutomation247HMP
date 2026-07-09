@@ -5,6 +5,9 @@ import com.studentautomation.dto.response.StudentResponseDTO;
 import com.studentautomation.entity.Student;
 import com.studentautomation.entity.User;
 import com.studentautomation.enums.Role;
+import com.studentautomation.exception.DuplicateResourceException;
+import com.studentautomation.exception.InvalidRequestException;
+import com.studentautomation.exception.ResourceNotFoundException;
 import com.studentautomation.mapper.StudentMapper;
 import com.studentautomation.repository.StudentRepository;
 import com.studentautomation.repository.UserRepository;
@@ -18,8 +21,8 @@ import java.util.List;
  * Service implementation for student-related operations.
  *
  * Purpose:
- * This class contains the actual business logic for creating,
- * reading, updating, and deleting student profiles.
+ * This class contains business logic for creating, reading,
+ * updating, deleting, and self-viewing student profiles.
  *
  * @author Yashvanth
  */
@@ -38,6 +41,11 @@ public class StudentServiceImpl implements StudentService {
     /**
      * Creates a new student profile and links it with an existing user account.
      *
+     * Purpose:
+     * This is old/legacy flow.
+     * Final flow should use AdminServiceImpl createStudent,
+     * where Admin creates both User and Student profile together.
+     *
      * @param request student request data from frontend/Postman
      * @return created student response data
      */
@@ -45,43 +53,35 @@ public class StudentServiceImpl implements StudentService {
     @Transactional
     public StudentResponseDTO createStudent(StudentRequestDTO request) {
 
-        try {
-            User user = userRepository.findById(request.userId())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+        User user = userRepository.findById(request.userId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-            if (user.getRole() != Role.STUDENT) {
-                throw new RuntimeException("Only STUDENT role user can be linked with student profile");
-            }
-
-            if (studentRepository.existsByRegNo(request.regNo())) {
-                throw new RuntimeException("Register number already exists");
-            }
-
-            if (studentRepository.existsByUser_Id(request.userId())) {
-                throw new RuntimeException("This user is already linked with a student profile");
-            }
-
-            Student student = new Student();
-            student.setRegNo(request.regNo());
-            student.setName(request.name());
-            student.setPhoneNo(request.phoneNo());
-            student.setDepartment(request.department());
-            student.setSemester(request.semester());
-            student.setSection(request.section());
-            student.setAcademicYear(request.academicYear());
-            student.setActive(true);
-            student.setUser(user);
-
-            Student savedStudent = studentRepository.save(student);
-
-            return StudentMapper.toResponseDTO(savedStudent);
-
-        } catch (RuntimeException exception) {
-            throw exception;
-
-        } catch (Exception exception) {
-            throw new RuntimeException("Student creation failed. Please try again later.");
+        if (user.getRole() != Role.STUDENT) {
+            throw new InvalidRequestException("Only STUDENT role user can be linked with student profile");
         }
+
+        if (studentRepository.existsByRegNo(request.regNo())) {
+            throw new DuplicateResourceException("Register number already exists");
+        }
+
+        if (studentRepository.existsByUser_Id(request.userId())) {
+            throw new DuplicateResourceException("This user is already linked with a student profile");
+        }
+
+        Student student = new Student();
+        student.setRegNo(request.regNo());
+        student.setName(request.name());
+        student.setPhoneNo(request.phoneNo());
+        student.setDepartment(request.department());
+        student.setSemester(request.semester());
+        student.setSection(request.section());
+        student.setAcademicYear(request.academicYear());
+        student.setActive(true);
+        student.setUser(user);
+
+        Student savedStudent = studentRepository.save(student);
+
+        return StudentMapper.toResponseDTO(savedStudent);
     }
 
     /**
@@ -92,16 +92,10 @@ public class StudentServiceImpl implements StudentService {
     @Override
     @Transactional(readOnly = true)
     public List<StudentResponseDTO> getAllStudents() {
-
-        try {
-            return studentRepository.findAll()
-                    .stream()
-                    .map(StudentMapper::toResponseDTO)
-                    .toList();
-
-        } catch (Exception exception) {
-            throw new RuntimeException("Failed to fetch students. Please try again later.");
-        }
+        return studentRepository.findAll()
+                .stream()
+                .map(StudentMapper::toResponseDTO)
+                .toList();
     }
 
     /**
@@ -114,18 +108,10 @@ public class StudentServiceImpl implements StudentService {
     @Transactional(readOnly = true)
     public StudentResponseDTO getStudentById(Long id) {
 
-        try {
-            Student student = studentRepository.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Student not found"));
+        Student student = studentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Student profile not found"));
 
-            return StudentMapper.toResponseDTO(student);
-
-        } catch (RuntimeException exception) {
-            throw exception;
-
-        } catch (Exception exception) {
-            throw new RuntimeException("Failed to fetch student. Please try again later.");
-        }
+        return StudentMapper.toResponseDTO(student);
     }
 
     /**
@@ -138,18 +124,10 @@ public class StudentServiceImpl implements StudentService {
     @Transactional(readOnly = true)
     public StudentResponseDTO getStudentByRegNo(String regNo) {
 
-        try {
-            Student student = studentRepository.findByRegNo(regNo)
-                    .orElseThrow(() -> new RuntimeException("Student not found"));
+        Student student = studentRepository.findByRegNo(regNo)
+                .orElseThrow(() -> new ResourceNotFoundException("Student profile not found"));
 
-            return StudentMapper.toResponseDTO(student);
-
-        } catch (RuntimeException exception) {
-            throw exception;
-
-        } catch (Exception exception) {
-            throw new RuntimeException("Failed to fetch student. Please try again later.");
-        }
+        return StudentMapper.toResponseDTO(student);
     }
 
     /**
@@ -163,32 +141,24 @@ public class StudentServiceImpl implements StudentService {
     @Transactional
     public StudentResponseDTO updateStudent(Long id, StudentRequestDTO request) {
 
-        try {
-            Student student = studentRepository.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Student not found"));
+        Student student = studentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Student profile not found"));
 
-            if (studentRepository.existsByRegNoAndIdNot(request.regNo(), id)) {
-                throw new RuntimeException("Register number already exists");
-            }
-
-            student.setRegNo(request.regNo());
-            student.setName(request.name());
-            student.setPhoneNo(request.phoneNo());
-            student.setDepartment(request.department());
-            student.setSemester(request.semester());
-            student.setSection(request.section());
-            student.setAcademicYear(request.academicYear());
-
-            Student updatedStudent = studentRepository.save(student);
-
-            return StudentMapper.toResponseDTO(updatedStudent);
-
-        } catch (RuntimeException exception) {
-            throw exception;
-
-        } catch (Exception exception) {
-            throw new RuntimeException("Student update failed. Please try again later.");
+        if (studentRepository.existsByRegNoAndIdNot(request.regNo(), id)) {
+            throw new DuplicateResourceException("Register number already exists");
         }
+
+        student.setRegNo(request.regNo());
+        student.setName(request.name());
+        student.setPhoneNo(request.phoneNo());
+        student.setDepartment(request.department());
+        student.setSemester(request.semester());
+        student.setSection(request.section());
+        student.setAcademicYear(request.academicYear());
+
+        Student updatedStudent = studentRepository.save(student);
+
+        return StudentMapper.toResponseDTO(updatedStudent);
     }
 
     /**
@@ -204,19 +174,35 @@ public class StudentServiceImpl implements StudentService {
     @Transactional
     public void deleteStudent(Long id) {
 
-        try {
-            Student student = studentRepository.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Student not found"));
+        Student student = studentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Student profile not found"));
 
-            student.setActive(false);
+        student.setActive(false);
 
-            studentRepository.save(student);
+        studentRepository.save(student);
+    }
 
-        } catch (RuntimeException exception) {
-            throw exception;
+    /**
+     * Gets the currently logged-in student's own profile.
+     *
+     * Purpose:
+     * This method finds the student profile using the logged-in user's email.
+     * Student cannot pass another student's ID, so data leakage is prevented.
+     *
+     * @param email logged-in student email from JWT
+     * @return logged-in student's profile details
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public StudentResponseDTO getMyProfile(String email) {
 
-        } catch (Exception exception) {
-            throw new RuntimeException("Student delete failed. Please try again later.");
+        Student student = studentRepository.findByUser_Email(email)
+                .orElseThrow(() -> new ResourceNotFoundException("Student profile not found"));
+
+        if (Boolean.FALSE.equals(student.getActive())) {
+            throw new InvalidRequestException("Student profile is inactive");
         }
+
+        return StudentMapper.toResponseDTO(student);
     }
 }

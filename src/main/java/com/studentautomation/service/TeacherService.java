@@ -68,4 +68,16 @@ public interface TeacherService {
      * @param id teacher ID
      */
     void deleteTeacher(Long id);
+
+    /**
+     * Gets the currently logged-in teacher's own profile.
+     *
+     * Purpose:
+     * This method is used by Teacher to view only his/her own profile.
+     * The email comes from JWT authentication, not from request body.
+     *
+     * @param email logged-in teacher email from JWT
+     * @return logged-in teacher's profile details
+     */
+    TeacherResponseDTO getMyProfile(String email);
 }

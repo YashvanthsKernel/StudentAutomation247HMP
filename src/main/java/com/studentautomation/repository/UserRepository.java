@@ -51,4 +51,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * @return list of users with the given role
      */
     List<User> findByRole(Role role);
+
+    /**
+     * Checks whether at least one user exists with the given role.
+     *
+     * Purpose:
+     * This is mainly used during application startup to check
+     * whether a default SUPER_ADMIN account already exists.
+     *
+     * @param role user role to check
+     * @return true if user exists with the given role, otherwise false
+     */
+    boolean existsByRole(Role role);
 }

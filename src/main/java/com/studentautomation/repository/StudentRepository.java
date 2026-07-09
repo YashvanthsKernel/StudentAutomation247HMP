@@ -74,4 +74,15 @@ public interface StudentRepository extends JpaRepository<Student, Long> {
      * @return list of students from given department and semester
      */
     List<Student> findByDepartmentAndSemester(String department, Integer semester);
+    /**
+     * Finds a student profile using linked user email.
+     *
+     * Purpose:
+     * This is used for GET /api/student/me.
+     * The logged-in student's email comes from JWT token.
+     *
+     * @param email logged-in user's email
+     * @return student profile if found
+     */
+    Optional<Student> findByUser_Email(String email);
 }

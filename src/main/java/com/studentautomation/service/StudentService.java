@@ -68,4 +68,15 @@ public interface StudentService {
      * @param id student ID
      */
     void deleteStudent(Long id);
-}
+
+    /**
+     * Gets the currently logged-in student's own profile.
+     *
+     * Purpose:
+     * This method is used by Student to view only his/her own profile.
+     * The email comes from JWT authentication, not from request body.
+     *
+     * @param email logged-in student email from JWT
+     * @return logged-in student's profile details
+     */
+    StudentResponseDTO getMyProfile(String email);}
