@@ -3,11 +3,16 @@ package com.studentautomation.controller;
 import com.studentautomation.dto.request.LoginRequestDTO;
 import com.studentautomation.dto.request.RegisterRequestDTO;
 import com.studentautomation.dto.response.ApiResponse;
+import com.studentautomation.dto.response.AuthTokenResponseDTO;
 import com.studentautomation.dto.response.LoginResponseDTO;
 import com.studentautomation.service.AuthService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
+import java.time.Duration;
 
 /**
  * Controller class for authentication-related APIs.
@@ -76,23 +81,84 @@ public class AuthController {
     }
 
     /**
-     * Logs in an existing user.
+     * Logs in a user account.
      *
      * Purpose:
-     * This API checks email and password.
-     * Later, JWT access token and refresh token will be returned here.
+     * This API validates email and password.
+     * If login is successful, it returns access token in response body
+     * and stores refresh token inside HttpOnly cookie.
      *
      * @param request login request data
-     * @return logged-in user response
+     * @param response HTTP response used to add refresh token cookie
+     * @return login response with access token only
      */
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<LoginResponseDTO>> login(
-            @Valid @RequestBody LoginRequestDTO request) {
+            @Valid @RequestBody LoginRequestDTO request,
+            HttpServletResponse response
+    ) {
+        AuthTokenResponseDTO authTokenResponse = authService.login(request);
 
-        LoginResponseDTO response = authService.login(request);
+        addRefreshTokenCookie(response, authTokenResponse.refreshToken());
+
+        LoginResponseDTO loginResponse = new LoginResponseDTO(
+                authTokenResponse.email(),
+                authTokenResponse.role(),
+                authTokenResponse.accessToken()
+        );
 
         return ResponseEntity.ok(
-                ApiResponse.success("Login successful", response)
+                ApiResponse.success("Login successful", loginResponse)
+        );
+    }
+    /**
+     * Adds refresh token into HttpOnly cookie.
+     *
+     * Purpose:
+     * Refresh token should not be exposed in JSON response.
+     * So this method stores the refresh token inside a secure HttpOnly cookie.
+     *
+     * Note:
+     * secure(false) is used for localhost development.
+     * In production with HTTPS, change secure(false) to secure(true).
+     *
+     * @param response HTTP response object
+     * @param refreshToken JWT refresh token
+     */
+    private void addRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
+
+        ResponseCookie cookie = ResponseCookie.from("refreshToken", refreshToken)
+                .httpOnly(true)
+                .secure(false)
+                .path("/api/auth/refresh-token")
+                .maxAge(Duration.ofDays(7))
+                .sameSite("Lax")
+                .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+    /**
+     * Refreshes access token using refresh token from cookie.
+     *
+     * Purpose:
+     * This API reads the refresh token from HttpOnly cookie,
+     * validates it, and returns a new access token.
+     *
+     * Note:
+     * No request body is needed.
+     * Refresh token is automatically sent by browser/Bruno as cookie.
+     *
+     * @param refreshToken refresh token stored in HttpOnly cookie
+     * @return new access token response
+     */
+    @PostMapping("/refresh-token")
+    public ResponseEntity<ApiResponse<LoginResponseDTO>> refreshAccessToken(
+            @CookieValue(name = "refreshToken", required = false) String refreshToken
+    ) {
+        LoginResponseDTO loginResponse = authService.refreshAccessToken(refreshToken);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Access token refreshed successfully", loginResponse)
         );
     }
 }

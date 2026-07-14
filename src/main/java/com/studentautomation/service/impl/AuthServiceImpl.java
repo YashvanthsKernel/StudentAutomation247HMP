@@ -2,6 +2,7 @@ package com.studentautomation.service.impl;
 
 import com.studentautomation.dto.request.LoginRequestDTO;
 import com.studentautomation.dto.request.RegisterRequestDTO;
+import com.studentautomation.dto.response.AuthTokenResponseDTO;
 import com.studentautomation.dto.response.LoginResponseDTO;
 import com.studentautomation.entity.User;
 import com.studentautomation.enums.AccountStatus;
@@ -11,7 +12,6 @@ import com.studentautomation.exception.InvalidRequestException;
 import com.studentautomation.repository.UserRepository;
 import com.studentautomation.security.JwtService;
 import com.studentautomation.service.AuthService;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -109,44 +109,93 @@ public class AuthServiceImpl implements AuthService {
 
         return new LoginResponseDTO(
                 savedUser.getEmail(),
-                savedUser.getRole(),
-                null,
+                savedUser.getRole().name(),
                 null
         );
     }
 
     /**
-     * Logs in an existing user.
+     * Logs in a user account.
      *
      * Purpose:
-     * This method checks email, account status, and password.
-     * If login is successful, it generates JWT access token.
+     * This method validates user email and password.
+     * If valid, it generates both access token and refresh token.
      *
-     * @param request login details from frontend/Postman
-     * @return logged-in user response details with JWT access token
+     * Access token:
+     * Returned in JSON response and used for protected APIs.
+     *
+     * Refresh token:
+     * Sent to controller so controller can store it inside HttpOnly cookie.
+     *
+     * @param request login request data containing email and password
+     * @return authentication response containing access token and refresh token
      */
     @Override
-    @Transactional(readOnly = true)
-    public LoginResponseDTO login(LoginRequestDTO request) {
+    public AuthTokenResponseDTO login(LoginRequestDTO request) {
 
         User user = userRepository.findByEmail(request.email())
-                .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
+                .orElseThrow(() -> new InvalidRequestException("Invalid email or password"));
+
+        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+            throw new InvalidRequestException("Invalid email or password");
+        }
 
         if (user.getAccountStatus() != AccountStatus.ACTIVE) {
             throw new InvalidRequestException("Account is not active");
         }
 
-        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-            throw new BadCredentialsException("Invalid email or password");
+        String accessToken = jwtService.generateAccessToken(user);
+        String refreshToken = jwtService.generateRefreshToken(user);
+
+        return new AuthTokenResponseDTO(
+                user.getEmail(),
+                user.getRole().name(),
+                accessToken,
+                refreshToken
+        );
+    }
+
+    /**
+     * Refreshes access token using refresh token.
+     *
+     * Purpose:
+     * This method checks whether refresh token is valid.
+     * If valid, it extracts user email, loads user from database,
+     * and generates a new access token.
+     *
+     * Important:
+     * Refresh token is not returned in response body.
+     * It remains inside HttpOnly cookie.
+     *
+     * @param refreshToken JWT refresh token from cookie
+     * @return login response containing new access token
+     */
+    @Override
+    public LoginResponseDTO refreshAccessToken(String refreshToken) {
+
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new InvalidRequestException("Refresh token is missing");
         }
 
-        String accessToken = jwtService.generateAccessToken(user);
+        if (!jwtService.isRefreshTokenValid(refreshToken)) {
+            throw new InvalidRequestException("Invalid or expired refresh token");
+        }
+
+        String email = jwtService.extractEmail(refreshToken);
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new InvalidRequestException("User not found"));
+
+        if (user.getAccountStatus() != AccountStatus.ACTIVE) {
+            throw new InvalidRequestException("Account is not active");
+        }
+
+        String newAccessToken = jwtService.generateAccessToken(user);
 
         return new LoginResponseDTO(
                 user.getEmail(),
-                user.getRole(),
-                accessToken,
-                null
+                user.getRole().name(),
+                newAccessToken
         );
     }
 }

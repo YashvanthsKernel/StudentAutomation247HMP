@@ -2,56 +2,67 @@ package com.studentautomation.service;
 
 import com.studentautomation.dto.request.LoginRequestDTO;
 import com.studentautomation.dto.request.RegisterRequestDTO;
+import com.studentautomation.dto.response.AuthTokenResponseDTO;
 import com.studentautomation.dto.response.LoginResponseDTO;
 
 /**
  * Service interface for authentication-related operations.
  *
  * Purpose:
- * This interface defines student registration, teacher registration,
- * and login operations.
- *
- * Actual logic will be written inside AuthServiceImpl.
+ * This interface defines authentication operations such as
+ * student registration, teacher registration, and login.
  *
  * @author Yashvanth
  */
 public interface AuthService {
 
     /**
-     * Registers a new student user account.
+     * Registers a student user account.
      *
      * Purpose:
-     * This method is used only for student registration.
-     * The STUDENT role will be assigned from backend logic,
-     * not from frontend request body.
+     * Creates a new user with STUDENT role.
      *
-     * @param request registration details from frontend/Postman
-     * @return registered student login response details
+     * @param request student registration request data
+     * @return registered student login response
      */
     LoginResponseDTO registerStudent(RegisterRequestDTO request);
 
     /**
-     * Registers a new teacher user account.
+     * Registers a teacher user account.
      *
      * Purpose:
-     * This method is used only for teacher registration.
-     * The TEACHER role will be assigned from backend logic,
-     * not from frontend request body.
+     * Creates a new user with TEACHER role.
      *
-     * @param request registration details from frontend/Postman
-     * @return registered teacher login response details
+     * @param request teacher registration request data
+     * @return registered teacher login response
      */
     LoginResponseDTO registerTeacher(RegisterRequestDTO request);
 
     /**
-     * Logs in an existing user.
+     * Logs in a user.
      *
      * Purpose:
-     * Student, Teacher, Admin, and Super Admin can login
-     * if their account already exists and account status is ACTIVE.
+     * Validates email and password, then returns access token
+     * and refresh token internally.
      *
-     * @param request login details from frontend/Postman
-     * @return login response details
+     * Note:
+     * Refresh token should not be directly returned to frontend.
+     * Controller will store it inside HttpOnly cookie.
+     *
+     * @param request login request data
+     * @return authentication token response containing access and refresh token
      */
-    LoginResponseDTO login(LoginRequestDTO request);
+    AuthTokenResponseDTO login(LoginRequestDTO request);
+
+    /**
+     * Refreshes access token using refresh token.
+     *
+     * Purpose:
+     * This method validates the refresh token and generates
+     * a new access token for the same user.
+     *
+     * @param refreshToken JWT refresh token from HttpOnly cookie
+     * @return login response containing new access token
+     */
+    LoginResponseDTO refreshAccessToken(String refreshToken);
 }

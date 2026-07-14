@@ -68,13 +68,6 @@ public class SecurityConfig {
 
                 .exceptionHandling(exception -> exception
 
-                        /*
-                         * Handles 401 Unauthorized errors.
-                         *
-                         * Purpose:
-                         * This runs when user does not send token
-                         * or sends invalid/expired token.
-                         */
                         .authenticationEntryPoint((request, response, authException) -> {
                             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
@@ -86,13 +79,6 @@ public class SecurityConfig {
                             );
                         })
 
-                        /*
-                         * Handles 403 Forbidden errors.
-                         *
-                         * Purpose:
-                         * This runs when user is logged in,
-                         * but does not have the required role.
-                         */
                         .accessDeniedHandler((request, response, accessDeniedException) -> {
                             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
@@ -107,34 +93,26 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
 
-                        // Public APIs
                         .requestMatchers("/api/auth/**").permitAll()
 
-                        // Super Admin APIs
                         .requestMatchers("/api/super-admin/**")
                         .hasRole("SUPER_ADMIN")
 
-                        // Admin APIs
                         .requestMatchers("/api/admin/**")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN")
 
-                        // Teacher self APIs
                         .requestMatchers("/api/teacher/**")
                         .hasRole("TEACHER")
 
-                        // Student self APIs
                         .requestMatchers("/api/student/**")
                         .hasRole("STUDENT")
 
-                        // Teacher management APIs
                         .requestMatchers("/api/teachers/**")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN")
 
-                        // Student management APIs
                         .requestMatchers("/api/students/**")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN")
 
-                        // Every other API needs login
                         .anyRequest().authenticated()
                 )
 

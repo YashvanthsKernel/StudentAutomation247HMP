@@ -1,25 +1,24 @@
 package com.studentautomation.dto.response;
 
-import com.studentautomation.enums.Role;
-
 /**
  * Response DTO for login API.
  *
  * Purpose:
- * This DTO sends login success details back to frontend.
- * Later, when JWT is added, accessToken and refreshToken will be sent here.
+ * This DTO is returned to frontend after successful login.
  *
- * @param email logged-in user email
- * @param role logged-in user role
+ * Note:
+ * Refresh token is not included here because it is stored
+ * securely in HttpOnly cookie.
+ *
+ * @param email user email
+ * @param role user role
  * @param accessToken JWT access token
- * @param refreshToken JWT refresh token
  *
  * @author Yashvanth
  */
 public record LoginResponseDTO(
         String email,
-        Role role,
-        String accessToken,
-        String refreshToken
+        String role,
+        String accessToken
 ) {
 }
