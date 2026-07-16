@@ -1,0 +1,135 @@
+package com.studentautomation.entity;
+
+import com.studentautomation.enums.AttendanceStatus;
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+/**
+ * Entity class representing attendance records of students.
+ *
+ * Purpose:
+ * This class stores the attendance details of a student for a specific
+ * subject, date, and period. Each attendance record is marked by a teacher.
+ *
+ * Important Rule:
+ * A student should not have duplicate attendance for the same date,
+ * subject, and period.
+ *
+ * @author Yashvanth
+ */
+@Entity
+@Table(
+        name = "attendances",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_student_attendance_date_subject_period",
+                        columnNames = {
+                                "student_id",
+                                "attendance_date",
+                                "subject_name",
+                                "period_number"
+                        }
+                )
+        }
+)
+@Getter
+@Setter
+@NoArgsConstructor
+public class Attendance {
+
+    /**
+     * Unique ID of the attendance record.
+     */
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    /**
+     * Student whose attendance is being marked.
+     */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "student_id", nullable = false)
+    private Student student;
+
+    /**
+     * Teacher who marked the attendance.
+     */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "marked_by_teacher_id", nullable = false)
+    private Teacher markedBy;
+
+    /**
+     * Date for which attendance is marked.
+     */
+    @Column(name = "attendance_date", nullable = false)
+    private LocalDate attendanceDate;
+
+    /**
+     * Subject name for which attendance is marked.
+     *
+     * Note:
+     * For now we are using String. Later, when we create Subject module,
+     * this can be replaced with a Subject entity relationship.
+     */
+    @Column(name = "subject_name", nullable = false, length = 100)
+    private String subjectName;
+
+    /**
+     * Period number of the class.
+     *
+     * Example:
+     * 1 means first period, 2 means second period.
+     */
+    @Column(name = "period_number", nullable = false)
+    private Integer periodNumber;
+
+    /**
+     * Attendance status of the student.
+     *
+     * Example:
+     * PRESENT, ABSENT, LATE, EXCUSED
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private AttendanceStatus status;
+
+    /**
+     * Optional remarks added by the teacher.
+     */
+    @Column(length = 255)
+    private String remarks;
+
+    /**
+     * Time when this attendance record was created.
+     */
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    /**
+     * Time when this attendance record was last updated.
+     */
+    @Column(nullable = false)
+    private LocalDateTime updatedAt;
+
+    /**
+     * Automatically sets createdAt and updatedAt before saving.
+     */
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * Automatically updates updatedAt before updating.
+     */
+    @PreUpdate
+    protected void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+}
