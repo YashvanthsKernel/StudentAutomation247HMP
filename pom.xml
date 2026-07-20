@@ -28,6 +28,8 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
+		<!-- SonarCloud -->
+		<sonar.organization>yashvanthskernel</sonar.organization>
 		<!-- JaCoCo -->
 		<jacoco.version>0.8.12</jacoco.version>
 	</properties>

@@ -1,7 +1,7 @@
 # ============================================================
 # SonarQube Code Analysis - GitHub Actions Workflow
 # Project: Student Automation System (Spring Boot + Maven)
-# Triggers: Push to main/develop | Pull Requests to main
+# Organization: yashvanthskernel
 # ============================================================
 
 name: 🔍 SonarQube Code Analysis
@@ -14,12 +14,7 @@ on:
       - dev
   pull_request:
     types: [opened, synchronize, reopened]
-    branches:
-      - main
-      - develop
-      - dev
 
-# Cancel redundant in-progress runs for the same branch
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -32,10 +27,10 @@ permissions:
 
 jobs:
   sonarqube-analysis:
-    name: 🛡️ SonarQube Analysis
+    name: 🛡️ Build and Analyze
     runs-on: ubuntu-latest
 
-    # ── Service: PostgreSQL (needed if tests need DB) ──────────────────────
+    # ── PostgreSQL Service for Integration Tests ──────────────────────────────
     services:
       postgres:
         image: postgres:16
@@ -52,21 +47,20 @@ jobs:
           --health-retries 5
 
     steps:
-      # ── Step 1: Checkout Full Git History (required for SonarQube blame) ──
+      # ── Step 1: Checkout Full History ──────────────────────────────────────
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history → accurate line blame & new code detection
+          fetch-depth: 0  # Full history required for SonarQube blame analysis
 
-      # ── Step 2: Setup Java 21 (LTS) ────────────────────────────────────────
+      # ── Step 2: Setup JDK 21 ───────────────────────────────────────────────
       - name: ☕ Set up JDK 21
         uses: actions/setup-java@v4
         with:
           java-version: '21'
-          distribution: 'temurin'   # Eclipse Temurin (recommended)
-          cache: maven               # Cache Maven local repo for speed
+          distribution: 'temurin'
 
-      # ── Step 3: Cache SonarQube packages ───────────────────────────────────
+      # ── Step 3: Cache SonarQube Packages ───────────────────────────────────
       - name: 💾 Cache SonarQube Packages
         uses: actions/cache@v4
         with:
@@ -74,67 +68,38 @@ jobs:
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
-      # ── Step 4: Cache Maven Dependencies ───────────────────────────────────
-      - name: 💾 Cache Maven Dependencies
+      # ── Step 4: Cache Maven Packages ───────────────────────────────────────
+      - name: 💾 Cache Maven Packages
         uses: actions/cache@v4
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-maven
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
 
-      # ── Step 5: Grant Execute Permission to Maven Wrapper ─────────
+      # ── Step 5: Make Maven Wrapper Executable ──────────────────────────────
       - name: 🔑 Make Maven Wrapper Executable
         run: chmod +x ./mvnw
 
-      # ── Step 6: Build, Test & Generate JaCoCo Coverage Report ─────────────
-      - name: 🏗️ Build & Run Tests with Coverage
+      # ── Step 6: Build, Test & Analyze with SonarCloud ──────────────────────
+      - name: 🔍 Build, Test and Analyze
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          ./mvnw verify \
+          ./mvnw -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.projectKey=YashvanthsKernel_StudentAutomation247HMP \
+            -Dsonar.organization=yashvanthskernel \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
             -Dspring.datasource.url=jdbc:postgresql://localhost:5432/student_automation_test \
             -Dspring.datasource.username=${{ secrets.DB_USERNAME }} \
             -Dspring.datasource.password=${{ secrets.DB_PASSWORD }} \
             -Dspring.jpa.hibernate.ddl-auto=create-drop \
-            --batch-mode \
-            --no-transfer-progress
-        env:
-          JAVA_OPTS: "-Xmx2g"
-
-      # ── Step 6: Run SonarQube Analysis ─────────────────────────────────────
-      - name: 🔍 Run SonarQube Scan
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          ./mvnw org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-            "-Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}" \
-            "-Dsonar.token=${{ secrets.SONAR_TOKEN }}" \
-            "-Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}" \
-            "-Dsonar.projectKey=student-automation" \
-            "-Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml" \
-            --batch-mode \
             --no-transfer-progress
 
-      # ── Step 7: Wait for Quality Gate Result ───────────────────────────────
-      - name: ✅ Check SonarQube Quality Gate
-        uses: SonarSource/sonarqube-quality-gate-action@v1
-        timeout-minutes: 5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      # ── Step 8: Upload JaCoCo Coverage Report as Artifact ──────────────────
+      # ── Step 7: Upload JaCoCo Coverage Report ──────────────────────────────
       - name: 📊 Upload Coverage Report
         uses: actions/upload-artifact@v4
-        if: always()   # Upload even if tests fail (for debugging)
+        if: always()
         with:
           name: jacoco-coverage-report
           path: target/site/jacoco/
           retention-days: 7
-
-      # ── Step 9: Publish Test Results Summary ───────────────────────────────
-      - name: 📝 Publish Test Results
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always()
-        with:
-          files: "target/surefire-reports/**/*.xml"
-          action_fail_on_inconclusive: false
