@@ -11,10 +11,13 @@ on:
     branches:
       - main
       - develop
+      - dev
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
       - main
+      - develop
+      - dev
 
 # Cancel redundant in-progress runs for the same branch
 concurrency:
