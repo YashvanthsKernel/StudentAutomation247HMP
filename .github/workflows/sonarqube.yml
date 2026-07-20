@@ -24,6 +24,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  statuses: write
+
 jobs:
   sonarqube-analysis:
     name: 🛡️ SonarQube Analysis
@@ -134,5 +140,5 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@v2
         if: always()
         with:
-          files: |
-            target/surefire-reports/**/*.xml
+          files: "target/surefire-reports/**/*.xml"
+          action_fail_on_inconclusive: false
