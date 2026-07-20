@@ -109,6 +109,8 @@ jobs:
           ./mvnw org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
             "-Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}" \
             "-Dsonar.token=${{ secrets.SONAR_TOKEN }}" \
+            "-Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}" \
+            "-Dsonar.projectKey=student-automation" \
             "-Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml" \
             --batch-mode \
             --no-transfer-progress
