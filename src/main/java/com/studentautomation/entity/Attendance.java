@@ -17,8 +17,8 @@ import java.time.LocalDateTime;
  * subject, date, and period. Each attendance record is marked by a teacher.
  *
  * Important Rule:
- * A student should not have duplicate attendance for the same date,
- * subject, and period.
+ * A student must not have duplicate attendance for the same
+ * subject, attendance date, and period.
  *
  * @author Yashvanth
  */
@@ -31,7 +31,7 @@ import java.time.LocalDateTime;
                         columnNames = {
                                 "student_id",
                                 "attendance_date",
-                                "subject_name",
+                                "subject_id",
                                 "period_number"
                         }
                 )
@@ -51,6 +51,8 @@ public class Attendance {
 
     /**
      * Student whose attendance is being marked.
+     *
+     * Many attendance records can belong to one student.
      */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "student_id", nullable = false)
@@ -58,10 +60,25 @@ public class Attendance {
 
     /**
      * Teacher who marked the attendance.
+     *
+     * The authenticated teacher will be fetched from the database
+     * and stored in this relationship.
      */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "marked_by_teacher_id", nullable = false)
     private Teacher markedBy;
+
+    /**
+     * Subject for which attendance is being marked.
+     *
+     * The subject will be fetched from the subjects table using
+     * the subjectId received in the attendance request.
+     *
+     * Many attendance records can belong to one subject.
+     */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "subject_id", nullable = false)
+    private Subject subject;
 
     /**
      * Date for which attendance is marked.
@@ -70,20 +87,10 @@ public class Attendance {
     private LocalDate attendanceDate;
 
     /**
-     * Subject name for which attendance is marked.
-     *
-     * Note:
-     * For now we are using String. Later, when we create Subject module,
-     * this can be replaced with a Subject entity relationship.
-     */
-    @Column(name = "subject_name", nullable = false, length = 100)
-    private String subjectName;
-
-    /**
      * Period number of the class.
      *
      * Example:
-     * 1 means first period, 2 means second period.
+     * 1 means first period and 2 means second period.
      */
     @Column(name = "period_number", nullable = false)
     private Integer periodNumber;
@@ -117,16 +124,20 @@ public class Attendance {
     private LocalDateTime updatedAt;
 
     /**
-     * Automatically sets createdAt and updatedAt before saving.
+     * Automatically sets the creation and update timestamps
+     * before inserting the attendance record.
      */
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+        LocalDateTime currentTime = LocalDateTime.now();
+
+        this.createdAt = currentTime;
+        this.updatedAt = currentTime;
     }
 
     /**
-     * Automatically updates updatedAt before updating.
+     * Automatically updates the modification timestamp
+     * before updating the attendance record.
      */
     @PreUpdate
     protected void onUpdate() {

@@ -96,4 +96,21 @@ public interface TeacherSubjectRepository extends JpaRepository<TeacherSubject, 
     List<TeacherSubject> findBySubject_IdAndActiveTrueOrderByTeacher_NameAsc(
             Long subjectId
     );
+
+    /**
+     * Checks whether a teacher has an active assignment for
+     * a subject, section, and academic year.
+     *
+     * @param teacherId teacher ID
+     * @param subjectId subject ID
+     * @param section assigned section
+     * @param academicYear assigned academic year
+     * @return true when an active assignment exists
+     */
+    boolean existsByTeacher_IdAndSubject_IdAndSectionIgnoreCaseAndAcademicYearAndActiveTrue(
+            Long teacherId,
+            Long subjectId,
+            String section,
+            String academicYear
+    );
 }

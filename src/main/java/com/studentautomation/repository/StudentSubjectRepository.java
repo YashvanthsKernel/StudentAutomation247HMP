@@ -114,4 +114,19 @@ public interface StudentSubjectRepository
     findBySubject_IdAndActiveTrueOrderByStudent_NameAsc(
             Long subjectId
     );
+
+    /**
+     * Checks whether a student has an active assignment
+     * for a subject and academic year.
+     *
+     * @param studentId student ID
+     * @param subjectId subject ID
+     * @param academicYear academic year
+     * @return true when an active assignment exists
+     */
+    boolean existsByStudent_IdAndSubject_IdAndAcademicYearAndActiveTrue(
+            Long studentId,
+            Long subjectId,
+            String academicYear
+    );
 }

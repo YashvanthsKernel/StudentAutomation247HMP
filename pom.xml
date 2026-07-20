@@ -28,6 +28,12 @@
 	</scm>
 	<properties>
 		<java.version>26</java.version>
+		<!-- SonarQube -->
+		<sonar.projectKey>student-automation</sonar.projectKey>
+		<sonar.organization>your-sonar-org</sonar.organization> <!-- Update with your org -->
+		<sonar.host.url>https://sonarcloud.io</sonar.host.url>   <!-- Or your self-hosted URL -->
+		<!-- JaCoCo -->
+		<jacoco.version>0.8.12</jacoco.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -128,6 +134,37 @@
 						</exclude>
 					</excludes>
 				</configuration>
+			</plugin>
+
+			<!-- ── JaCoCo: Code Coverage ─────────────────────────────── -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco.version}</version>
+				<executions>
+					<!-- Prepare agent before tests run -->
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<!-- Generate XML + HTML report after tests -->
+					<execution>
+						<id>report</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- ── SonarQube Maven Plugin ─────────────────────────────── -->
+			<plugin>
+				<groupId>org.sonarsource.scanner.maven</groupId>
+				<artifactId>sonar-maven-plugin</artifactId>
+				<version>4.0.0.4121</version>
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
