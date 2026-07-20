@@ -9,8 +9,6 @@ name: 🔍 SonarQube Code Analysis
 on:
   push:
     branches:
-      - main
-      - develop
       - dev
   pull_request:
     types: [opened, synchronize, reopened]
