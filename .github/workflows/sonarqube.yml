@@ -82,7 +82,11 @@ jobs:
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-maven
 
-      # ── Step 5: Build, Test & Generate JaCoCo Coverage Report ─────────────
+      # ── Step 5: Grant Execute Permission to Maven Wrapper ─────────
+      - name: 🔑 Make Maven Wrapper Executable
+        run: chmod +x ./mvnw
+
+      # ── Step 6: Build, Test & Generate JaCoCo Coverage Report ─────────────
       - name: 🏗️ Build & Run Tests with Coverage
         run: |
           ./mvnw verify \
