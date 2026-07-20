@@ -27,7 +27,7 @@
 		<url/>
 	</scm>
 	<properties>
-		<java.version>26</java.version>
+		<java.version>21</java.version>
 		<!-- SonarQube -->
 		<sonar.projectKey>student-automation</sonar.projectKey>
 		<sonar.organization>your-sonar-org</sonar.organization> <!-- Update with your org -->
