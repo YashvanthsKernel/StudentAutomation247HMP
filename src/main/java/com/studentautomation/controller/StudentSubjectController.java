@@ -1,5 +1,7 @@
 package com.studentautomation.controller;
 
+import com.studentautomation.dto.request.AssignClassSubjectRequestDTO;
+import com.studentautomation.dto.request.BulkStudentSubjectRequestDTO;
 import com.studentautomation.dto.request.StudentSubjectRequestDTO;
 import com.studentautomation.dto.response.ApiResponse;
 import com.studentautomation.dto.response.StudentSubjectResponseDTO;
@@ -15,18 +17,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/**
- * REST controller for student-subject assignment operations.
- *
- * Purpose:
- * Provides APIs for assigning subjects to students,
- * retrieving active assignments, and deactivating assignments.
- *
- * Only ADMIN and SUPER_ADMIN users can manage
- * student-subject assignments.
- *
- * @author Yashvanth
- */
 @RestController
 @RequestMapping("/api/admin/student-subjects")
 @RequiredArgsConstructor
@@ -34,174 +24,76 @@ import java.util.List;
 @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
 public class StudentSubjectController {
 
-    /**
-     * Service used to perform student-subject assignment operations.
-     *
-     * Lombok's @RequiredArgsConstructor creates constructor injection
-     * for this final field.
-     */
     private final StudentSubjectService studentSubjectService;
 
-    /**
-     * Assigns a subject to a student for a particular academic year.
-     *
-     * Endpoint:
-     * POST /api/admin/student-subjects
-     *
-     * @param requestDTO student-subject assignment information
-     * @return created or reactivated assignment information
-     */
     @PostMapping
-    public ResponseEntity<ApiResponse<StudentSubjectResponseDTO>>
-    assignSubjectToStudent(
-            @Valid
-            @RequestBody
-            StudentSubjectRequestDTO requestDTO
+    public ResponseEntity<ApiResponse<StudentSubjectResponseDTO>> assignSubjectToStudent(
+            @Valid @RequestBody StudentSubjectRequestDTO requestDTO
     ) {
-
-        StudentSubjectResponseDTO assignedSubject =
-                studentSubjectService.assignSubjectToStudent(
-                        requestDTO
-                );
-
-        ApiResponse<StudentSubjectResponseDTO> response =
-                new ApiResponse<>(
-                        true,
-                        "Subject assigned to student successfully",
-                        assignedSubject
-                );
-
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(response);
+        StudentSubjectResponseDTO assignedSubject = studentSubjectService.assignSubjectToStudent(requestDTO);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Subject assigned to student successfully", assignedSubject));
     }
 
-    /**
-     * Retrieves all currently active student-subject assignments.
-     *
-     * Endpoint:
-     * GET /api/admin/student-subjects
-     *
-     * @return list of active student-subject assignments
-     */
+    @PostMapping("/bulk")
+    public ResponseEntity<ApiResponse<List<StudentSubjectResponseDTO>>> bulkAssignStudentSubjects(
+            @Valid @RequestBody BulkStudentSubjectRequestDTO request
+    ) {
+        List<StudentSubjectResponseDTO> response = studentSubjectService.bulkAssignStudentSubjects(request);
+        return ResponseEntity.ok(ApiResponse.success("Bulk student subjects assigned successfully", response));
+    }
+
+    @PostMapping("/assign-class")
+    public ResponseEntity<ApiResponse<List<StudentSubjectResponseDTO>>> assignClassToSubjects(
+            @Valid @RequestBody AssignClassSubjectRequestDTO request
+    ) {
+        List<StudentSubjectResponseDTO> response = studentSubjectService.assignClassToSubjects(request);
+        return ResponseEntity.ok(ApiResponse.success("Class assigned to subjects successfully", response));
+    }
+
     @GetMapping
-    public ResponseEntity<
-            ApiResponse<List<StudentSubjectResponseDTO>>
-            > getAllActiveAssignments() {
-
-        List<StudentSubjectResponseDTO> assignments =
-                studentSubjectService.getAllActiveAssignments();
-
-        ApiResponse<List<StudentSubjectResponseDTO>> response =
-                new ApiResponse<>(
-                        true,
-                        "Active student-subject assignments fetched successfully",
-                        assignments
-                );
-
-        return ResponseEntity.ok(response);
+    public ResponseEntity<ApiResponse<List<StudentSubjectResponseDTO>>> getAllActiveAssignments() {
+        List<StudentSubjectResponseDTO> assignments = studentSubjectService.getAllActiveAssignments();
+        return ResponseEntity.ok(ApiResponse.success("Active student-subject assignments fetched successfully", assignments));
     }
 
-    /**
-     * Retrieves all active subject assignments belonging
-     * to a particular student.
-     *
-     * Endpoint:
-     * GET /api/admin/student-subjects/student/{studentId}
-     *
-     * @param studentId database ID of the student
-     * @return active assignments belonging to the student
-     */
+    @GetMapping("/{assignmentId}")
+    public ResponseEntity<ApiResponse<StudentSubjectResponseDTO>> getAssignmentById(
+            @PathVariable @Positive Long assignmentId
+    ) {
+        StudentSubjectResponseDTO response = studentSubjectService.getAssignmentById(assignmentId);
+        return ResponseEntity.ok(ApiResponse.success("Assignment fetched successfully", response));
+    }
+
     @GetMapping("/student/{studentId}")
-    public ResponseEntity<
-            ApiResponse<List<StudentSubjectResponseDTO>>
-            > getAssignmentsByStudentId(
-            @PathVariable
-            @Positive(message = "Student ID must be greater than zero")
-            Long studentId
+    public ResponseEntity<ApiResponse<List<StudentSubjectResponseDTO>>> getAssignmentsByStudentId(
+            @PathVariable @Positive Long studentId
     ) {
-
-        List<StudentSubjectResponseDTO> assignments =
-                studentSubjectService.getAssignmentsByStudentId(
-                        studentId
-                );
-
-        ApiResponse<List<StudentSubjectResponseDTO>> response =
-                new ApiResponse<>(
-                        true,
-                        "Student subject assignments fetched successfully",
-                        assignments
-                );
-
-        return ResponseEntity.ok(response);
+        List<StudentSubjectResponseDTO> assignments = studentSubjectService.getAssignmentsByStudentId(studentId);
+        return ResponseEntity.ok(ApiResponse.success("Student subject assignments fetched successfully", assignments));
     }
 
-    /**
-     * Retrieves all active student assignments belonging
-     * to a particular subject.
-     *
-     * Endpoint:
-     * GET /api/admin/student-subjects/subject/{subjectId}
-     *
-     * @param subjectId database ID of the subject
-     * @return active assignments belonging to the subject
-     */
     @GetMapping("/subject/{subjectId}")
-    public ResponseEntity<
-            ApiResponse<List<StudentSubjectResponseDTO>>
-            > getAssignmentsBySubjectId(
-            @PathVariable
-            @Positive(message = "Subject ID must be greater than zero")
-            Long subjectId
+    public ResponseEntity<ApiResponse<List<StudentSubjectResponseDTO>>> getAssignmentsBySubjectId(
+            @PathVariable @Positive Long subjectId
     ) {
-
-        List<StudentSubjectResponseDTO> assignments =
-                studentSubjectService.getAssignmentsBySubjectId(
-                        subjectId
-                );
-
-        ApiResponse<List<StudentSubjectResponseDTO>> response =
-                new ApiResponse<>(
-                        true,
-                        "Subject student assignments fetched successfully",
-                        assignments
-                );
-
-        return ResponseEntity.ok(response);
+        List<StudentSubjectResponseDTO> assignments = studentSubjectService.getAssignmentsBySubjectId(subjectId);
+        return ResponseEntity.ok(ApiResponse.success("Subject student assignments fetched successfully", assignments));
     }
 
-    /**
-     * Deactivates an existing student-subject assignment.
-     *
-     * This performs a soft delete. The assignment remains
-     * stored in the database for academic history.
-     *
-     * Endpoint:
-     * PATCH /api/admin/student-subjects/{assignmentId}/deactivate
-     *
-     * @param assignmentId database ID of the assignment
-     * @return deactivated assignment information
-     */
-    @PatchMapping("/{assignmentId}/deactivate")
-    public ResponseEntity<ApiResponse<StudentSubjectResponseDTO>>
-    deactivateAssignment(
-            @PathVariable
-            @Positive(message = "Assignment ID must be greater than zero")
-            Long assignmentId
+    @PatchMapping("/{assignmentId}/activate")
+    public ResponseEntity<ApiResponse<StudentSubjectResponseDTO>> activateAssignment(
+            @PathVariable @Positive Long assignmentId
     ) {
+        StudentSubjectResponseDTO activatedAssignment = studentSubjectService.activateAssignment(assignmentId);
+        return ResponseEntity.ok(ApiResponse.success("Student-subject assignment activated successfully", activatedAssignment));
+    }
 
-        StudentSubjectResponseDTO deactivatedAssignment =
-                studentSubjectService.deactivateAssignment(
-                        assignmentId
-                );
-
-        ApiResponse<StudentSubjectResponseDTO> response =
-                new ApiResponse<>(
-                        true,
-                        "Student-subject assignment deactivated successfully",
-                        deactivatedAssignment
-                );
-
-        return ResponseEntity.ok(response);
+    @PatchMapping("/{assignmentId}/deactivate")
+    public ResponseEntity<ApiResponse<StudentSubjectResponseDTO>> deactivateAssignment(
+            @PathVariable @Positive Long assignmentId
+    ) {
+        StudentSubjectResponseDTO deactivatedAssignment = studentSubjectService.deactivateAssignment(assignmentId);
+        return ResponseEntity.ok(ApiResponse.success("Student-subject assignment deactivated successfully", deactivatedAssignment));
     }
 }

@@ -136,8 +136,13 @@ public class SecurityConfig {
                         /*
                          * Public authentication APIs.
                          */
-                        .requestMatchers("/api/auth/**")
-                        .permitAll()
+                        .requestMatchers(
+                                "/api/auth/login",
+                                "/api/auth/refresh-token",
+                                "/api/auth/forgot-password",
+                                "/api/auth/reset-password"
+                        ).permitAll()
+                        .requestMatchers("/api/auth/**").authenticated()
 
                         /*
                          * Only SUPER_ADMIN can access these APIs.

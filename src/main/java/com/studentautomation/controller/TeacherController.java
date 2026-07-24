@@ -1,10 +1,8 @@
 package com.studentautomation.controller;
 
-import com.studentautomation.dto.request.TeacherRequestDTO;
 import com.studentautomation.dto.response.ApiResponse;
 import com.studentautomation.dto.response.TeacherResponseDTO;
 import com.studentautomation.service.TeacherService;
-import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,8 +12,13 @@ import java.util.List;
  * Controller class for teacher-related APIs.
  *
  * Purpose:
- * This class receives HTTP requests from frontend/Postman
- * and sends them to the TeacherService layer.
+ * This class handles listing, fetching, updating and deactivating
+ * teacher profiles. Teacher creation has been moved to AdminController
+ * (POST /api/admin/teachers) as part of the production flow.
+ *
+ * Note:
+ * POST (create) is intentionally removed from this controller.
+ * Admin or Super Admin must use POST /api/admin/teachers to create teachers.
  *
  * @author Yashvanth
  */
@@ -30,31 +33,11 @@ public class TeacherController {
     }
 
     /**
-     * Creates a new teacher profile.
-     *
-     * Purpose:
-     * This API receives teacher details from frontend/Postman
-     * and creates a teacher profile linked with a user account.
-     *
-     * @param request teacher request data
-     * @return created teacher details
-     */
-    @PostMapping
-    public ResponseEntity<ApiResponse<TeacherResponseDTO>> createTeacher(
-            @Valid @RequestBody TeacherRequestDTO request) {
-
-        TeacherResponseDTO response = teacherService.createTeacher(request);
-
-        return ResponseEntity.ok(
-                ApiResponse.success("Teacher created successfully", response)
-        );
-    }
-
-    /**
      * Gets all teacher profiles.
      *
      * Purpose:
      * This API returns all teachers from the database.
+     * Admin and Super Admin can access this.
      *
      * @return list of teacher details
      */
@@ -72,7 +55,7 @@ public class TeacherController {
      * Gets a teacher by ID.
      *
      * Purpose:
-     * This API returns one teacher using teacher ID.
+     * This API returns one teacher using their profile ID.
      *
      * @param id teacher ID
      * @return teacher details
@@ -92,7 +75,7 @@ public class TeacherController {
      * Gets a teacher by employee ID.
      *
      * Purpose:
-     * This API returns one teacher using employee ID.
+     * This API returns one teacher using their unique employee ID.
      *
      * @param employeeId teacher employee ID
      * @return teacher details
@@ -109,33 +92,12 @@ public class TeacherController {
     }
 
     /**
-     * Updates an existing teacher profile.
-     *
-     * Purpose:
-     * This API updates teacher profile/professional details.
-     *
-     * @param id teacher ID
-     * @param request updated teacher request data
-     * @return updated teacher details
-     */
-    @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<TeacherResponseDTO>> updateTeacher(
-            @PathVariable Long id,
-            @Valid @RequestBody TeacherRequestDTO request) {
-
-        TeacherResponseDTO response = teacherService.updateTeacher(id, request);
-
-        return ResponseEntity.ok(
-                ApiResponse.success("Teacher updated successfully", response)
-        );
-    }
-
-    /**
      * Deactivates a teacher profile.
      *
      * Purpose:
      * This API does not permanently delete the teacher.
-     * It marks the teacher profile as inactive.
+     * It marks the teacher profile as inactive and blocks login.
+     * Use PATCH /api/admin/teachers/{id}/deactivate for granular control.
      *
      * @param id teacher ID
      * @return success message
@@ -147,7 +109,7 @@ public class TeacherController {
         teacherService.deleteTeacher(id);
 
         return ResponseEntity.ok(
-                ApiResponse.success("Teacher deleted successfully", null)
+                ApiResponse.success("Teacher deactivated successfully", null)
         );
     }
 }

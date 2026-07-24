@@ -168,6 +168,10 @@ public class TeacherServiceImpl implements TeacherService {
      * This is soft delete. The teacher record remains in database,
      * but active status becomes false.
      *
+     * Important:
+     * Both the teacher profile and the linked User account are deactivated
+     * so that the user can no longer log in.
+     *
      * @param id teacher ID
      */
     @Override
@@ -178,6 +182,15 @@ public class TeacherServiceImpl implements TeacherService {
                 .orElseThrow(() -> new ResourceNotFoundException("Teacher profile not found"));
 
         teacher.setActive(false);
+
+        /*
+         * Also deactivate the linked User account
+         * so the teacher cannot log in after being deactivated.
+         */
+        if (teacher.getUser() != null) {
+            teacher.getUser().setAccountStatus(com.studentautomation.enums.AccountStatus.INACTIVE);
+            userRepository.save(teacher.getUser());
+        }
 
         teacherRepository.save(teacher);
     }

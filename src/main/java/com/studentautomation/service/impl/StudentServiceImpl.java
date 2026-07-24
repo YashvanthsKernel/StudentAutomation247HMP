@@ -168,6 +168,10 @@ public class StudentServiceImpl implements StudentService {
      * This is soft delete. The student record remains in database,
      * but active status becomes false.
      *
+     * Important:
+     * Both the student profile and the linked User account are deactivated
+     * so that the user can no longer log in.
+     *
      * @param id student ID
      */
     @Override
@@ -178,6 +182,15 @@ public class StudentServiceImpl implements StudentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Student profile not found"));
 
         student.setActive(false);
+
+        /*
+         * Also deactivate the linked User account
+         * so the student cannot log in after being deactivated.
+         */
+        if (student.getUser() != null) {
+            student.getUser().setAccountStatus(com.studentautomation.enums.AccountStatus.INACTIVE);
+            userRepository.save(student.getUser());
+        }
 
         studentRepository.save(student);
     }

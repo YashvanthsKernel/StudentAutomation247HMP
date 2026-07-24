@@ -1,15 +1,18 @@
 package com.studentautomation.service.impl;
 
+import com.studentautomation.dto.request.ChangePasswordRequestDTO;
+import com.studentautomation.dto.request.ForgotPasswordRequestDTO;
 import com.studentautomation.dto.request.LoginRequestDTO;
-import com.studentautomation.dto.request.RegisterRequestDTO;
+import com.studentautomation.dto.request.ResetPasswordRequestDTO;
 import com.studentautomation.dto.response.AuthTokenResponseDTO;
 import com.studentautomation.dto.response.LoginResponseDTO;
+import com.studentautomation.dto.response.UserMeResponseDTO;
 import com.studentautomation.entity.User;
 import com.studentautomation.enums.AccountStatus;
-import com.studentautomation.enums.Role;
-import com.studentautomation.exception.DuplicateResourceException;
 import com.studentautomation.exception.InvalidRequestException;
+import com.studentautomation.exception.ResourceNotFoundException;
 import com.studentautomation.repository.UserRepository;
+import com.studentautomation.repository.PasswordResetTokenRepository;
 import com.studentautomation.security.JwtService;
 import com.studentautomation.service.AuthService;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,11 +23,12 @@ import org.springframework.transaction.annotation.Transactional;
  * Service implementation for authentication-related operations.
  *
  * Purpose:
- * This class contains login logic and temporary registration logic.
+ * This class contains login logic, token refresh, logout,
+ * password management, and user identity operations.
  *
- * Important:
- * Student and Teacher public registration should be removed from final production flow.
- * Final flow should be:
+ * Note:
+ * Public student and teacher registration has been removed.
+ * Final production flow:
  * Super Admin creates Admin.
  * Admin creates Student and Teacher.
  * Student and Teacher only login.
@@ -37,81 +41,19 @@ public class AuthServiceImpl implements AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final com.studentautomation.service.AuditLogService auditLogService;
 
     public AuthServiceImpl(UserRepository userRepository,
                            PasswordEncoder passwordEncoder,
-                           JwtService jwtService) {
+                           JwtService jwtService,
+                           PasswordResetTokenRepository passwordResetTokenRepository,
+                           com.studentautomation.service.AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
-    }
-
-    /**
-     * Registers a new student user account.
-     *
-     * Purpose:
-     * This is temporary development logic.
-     * In final production flow, student should be created by Admin only.
-     *
-     * @param request registration details from frontend/Postman
-     * @return registered student login response details
-     */
-    @Override
-    @Transactional
-    public LoginResponseDTO registerStudent(RegisterRequestDTO request) {
-        return registerUser(request, Role.STUDENT);
-    }
-
-    /**
-     * Registers a new teacher user account.
-     *
-     * Purpose:
-     * This is temporary development logic.
-     * In final production flow, teacher should be created by Admin only.
-     *
-     * @param request registration details from frontend/Postman
-     * @return registered teacher login response details
-     */
-    @Override
-    @Transactional
-    public LoginResponseDTO registerTeacher(RegisterRequestDTO request) {
-        return registerUser(request, Role.TEACHER);
-    }
-
-    /**
-     * Common private method for temporary user registration.
-     *
-     * Purpose:
-     * This method validates email, checks password confirmation,
-     * hashes password, saves user, and returns response.
-     *
-     * @param request registration details
-     * @param role role assigned by backend
-     * @return registered user login response details
-     */
-    private LoginResponseDTO registerUser(RegisterRequestDTO request, Role role) {
-
-        if (userRepository.existsByEmail(request.email())) {
-            throw new DuplicateResourceException("Email already exists");
-        }
-
-        if (!request.password().equals(request.confirmPassword())) {
-            throw new InvalidRequestException("Password and confirm password do not match");
-        }
-
-        User user = new User();
-        user.setEmail(request.email());
-        user.setPassword(passwordEncoder.encode(request.password()));
-        user.setRole(role);
-        user.setAccountStatus(AccountStatus.ACTIVE);
-
-        User savedUser = userRepository.save(user);
-
-        return new LoginResponseDTO(
-                savedUser.getEmail(),
-                savedUser.getRole().name(),
-                null
-        );
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -140,12 +82,18 @@ public class AuthServiceImpl implements AuthService {
             throw new InvalidRequestException("Invalid email or password");
         }
 
+        if (user.getAccountStatus() == AccountStatus.BLOCKED) {
+            throw new InvalidRequestException("Your account has been blocked. Please contact admin.");
+        }
+
         if (user.getAccountStatus() != AccountStatus.ACTIVE) {
-            throw new InvalidRequestException("Account is not active");
+            throw new InvalidRequestException("Account is not active. Please contact admin.");
         }
 
         String accessToken = jwtService.generateAccessToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
+
+        auditLogService.log(user.getEmail(), user.getRole().name(), "LOGIN_SUCCESS", "User logged in successfully");
 
         return new AuthTokenResponseDTO(
                 user.getEmail(),
@@ -197,5 +145,136 @@ public class AuthServiceImpl implements AuthService {
                 user.getRole().name(),
                 newAccessToken
         );
+    }
+
+    /**
+     * Performs logout for the currently logged-in user.
+     *
+     * Purpose:
+     * Since JWT is stateless, logout is handled client-side by clearing
+     * the refresh token cookie. This method is a hook for future
+     * token blacklisting or audit logging.
+     */
+    @Override
+    public void logout() {
+        /*
+         * Stateless JWT logout.
+         * Refresh token cookie is cleared by the controller.
+         * Token blacklisting can be added here in Phase 6.
+         */
+    }
+
+    /**
+     * Returns the profile of the currently logged-in user.
+     *
+     * Purpose:
+     * Extracts user identity from JWT email claim
+     * and returns their basic profile details.
+     *
+     * @param email email extracted from JWT token
+     * @return authenticated user's profile details
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public UserMeResponseDTO getMe(String email) {
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        return new UserMeResponseDTO(
+                user.getId(),
+                user.getEmail(),
+                user.getName(),
+                user.getRole(),
+                user.getAccountStatus(),
+                user.getCreatedAt()
+        );
+    }
+
+    /**
+     * Changes password for the currently logged-in user.
+     *
+     * Purpose:
+     * Validates old password, checks new password confirmation,
+     * and updates the hashed password in the database.
+     *
+     * @param email   email extracted from JWT token
+     * @param request contains old password, new password, confirm password
+     */
+    @Override
+    @Transactional
+    public void changePassword(String email, ChangePasswordRequestDTO request) {
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (!passwordEncoder.matches(request.oldPassword(), user.getPassword())) {
+            throw new InvalidRequestException("Current password is incorrect");
+        }
+
+        if (!request.newPassword().equals(request.confirmPassword())) {
+            throw new InvalidRequestException("New password and confirm password do not match");
+        }
+
+        if (request.oldPassword().equals(request.newPassword())) {
+            throw new InvalidRequestException("New password must be different from current password");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
+    }
+
+    /**
+     * Initiates forgot password flow by generating a secure reset token.
+     *
+     * @param request contains user email
+     */
+    @Override
+    @Transactional
+    public void forgotPassword(ForgotPasswordRequestDTO request) {
+        userRepository.findByEmail(request.email()).ifPresent(user -> {
+            passwordResetTokenRepository.findByUser(user).ifPresent(passwordResetTokenRepository::delete);
+
+            String token = java.util.UUID.randomUUID().toString().replace("-", "");
+            com.studentautomation.entity.PasswordResetToken resetToken =
+                    new com.studentautomation.entity.PasswordResetToken(
+                            token,
+                            user,
+                            java.time.LocalDateTime.now().plusMinutes(15)
+                    );
+            passwordResetTokenRepository.save(resetToken);
+        });
+    }
+
+    /**
+     * Resets password using a valid reset token.
+     *
+     * @param request contains reset token and new password
+     */
+    @Override
+    @Transactional
+    public void resetPassword(ResetPasswordRequestDTO request) {
+
+        if (!request.newPassword().equals(request.confirmPassword())) {
+            throw new InvalidRequestException("New password and confirm password do not match");
+        }
+
+        com.studentautomation.entity.PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(request.token())
+                .orElseThrow(() -> new InvalidRequestException("Invalid or expired password reset token"));
+
+        if (resetToken.isUsed()) {
+            throw new InvalidRequestException("Password reset token has already been used");
+        }
+
+        if (resetToken.isExpired()) {
+            throw new InvalidRequestException("Password reset token has expired");
+        }
+
+        User user = resetToken.getUser();
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
+
+        resetToken.setUsed(true);
+        passwordResetTokenRepository.save(resetToken);
     }
 }

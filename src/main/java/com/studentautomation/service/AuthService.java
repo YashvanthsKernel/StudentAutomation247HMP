@@ -1,68 +1,73 @@
 package com.studentautomation.service;
 
+import com.studentautomation.dto.request.ChangePasswordRequestDTO;
+import com.studentautomation.dto.request.ForgotPasswordRequestDTO;
 import com.studentautomation.dto.request.LoginRequestDTO;
-import com.studentautomation.dto.request.RegisterRequestDTO;
+import com.studentautomation.dto.request.ResetPasswordRequestDTO;
 import com.studentautomation.dto.response.AuthTokenResponseDTO;
 import com.studentautomation.dto.response.LoginResponseDTO;
+import com.studentautomation.dto.response.UserMeResponseDTO;
 
 /**
  * Service interface for authentication-related operations.
  *
  * Purpose:
- * This interface defines authentication operations such as
- * student registration, teacher registration, and login.
+ * Defines contract for login, token refresh, logout,
+ * password management, and user identity APIs.
  *
  * @author Yashvanth
  */
 public interface AuthService {
 
     /**
-     * Registers a student user account.
-     *
-     * Purpose:
-     * Creates a new user with STUDENT role.
-     *
-     * @param request student registration request data
-     * @return registered student login response
-     */
-    LoginResponseDTO registerStudent(RegisterRequestDTO request);
-
-    /**
-     * Registers a teacher user account.
-     *
-     * Purpose:
-     * Creates a new user with TEACHER role.
-     *
-     * @param request teacher registration request data
-     * @return registered teacher login response
-     */
-    LoginResponseDTO registerTeacher(RegisterRequestDTO request);
-
-    /**
-     * Logs in a user.
-     *
-     * Purpose:
-     * Validates email and password, then returns access token
-     * and refresh token internally.
-     *
-     * Note:
-     * Refresh token should not be directly returned to frontend.
-     * Controller will store it inside HttpOnly cookie.
+     * Logs in a user and returns access token with refresh token.
      *
      * @param request login request data
-     * @return authentication token response containing access and refresh token
+     * @return auth token response containing access and refresh tokens
      */
     AuthTokenResponseDTO login(LoginRequestDTO request);
 
     /**
-     * Refreshes access token using refresh token.
+     * Generates a new access token using a valid refresh token.
      *
-     * Purpose:
-     * This method validates the refresh token and generates
-     * a new access token for the same user.
-     *
-     * @param refreshToken JWT refresh token from HttpOnly cookie
-     * @return login response containing new access token
+     * @param refreshToken JWT refresh token from cookie
+     * @return new login response with fresh access token
      */
     LoginResponseDTO refreshAccessToken(String refreshToken);
+
+    /**
+     * Logs out a user by clearing the refresh token cookie.
+     * Stateless logout; token blacklisting can be added later.
+     */
+    void logout();
+
+    /**
+     * Returns the profile of the currently logged-in user.
+     *
+     * @param email email extracted from JWT token
+     * @return authenticated user details
+     */
+    UserMeResponseDTO getMe(String email);
+
+    /**
+     * Changes the password of the currently logged-in user.
+     *
+     * @param email     email extracted from JWT token
+     * @param request   contains old password, new password and confirm password
+     */
+    void changePassword(String email, ChangePasswordRequestDTO request);
+
+    /**
+     * Initiates forgot password flow by generating a reset token.
+     *
+     * @param request contains user email
+     */
+    void forgotPassword(ForgotPasswordRequestDTO request);
+
+    /**
+     * Resets the password using a valid reset token.
+     *
+     * @param request contains reset token and new password
+     */
+    void resetPassword(ResetPasswordRequestDTO request);
 }

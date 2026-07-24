@@ -3,50 +3,22 @@ package com.studentautomation.service.impl;
 import com.studentautomation.dto.request.AttendanceRequestDTO;
 import com.studentautomation.dto.request.BulkAttendanceRecordRequestDTO;
 import com.studentautomation.dto.request.BulkAttendanceRequestDTO;
-import com.studentautomation.dto.response.AttendanceResponseDTO;
-import com.studentautomation.dto.response.BulkAttendanceErrorDTO;
-import com.studentautomation.dto.response.BulkAttendanceResponseDTO;
-import com.studentautomation.entity.Attendance;
-import com.studentautomation.entity.Student;
-import com.studentautomation.entity.Subject;
-import com.studentautomation.entity.Teacher;
+import com.studentautomation.dto.response.*;
+import com.studentautomation.entity.*;
+import com.studentautomation.enums.AttendanceStatus;
 import com.studentautomation.exception.DuplicateResourceException;
 import com.studentautomation.exception.InvalidRequestException;
-import com.studentautomation.repository.AttendanceRepository;
-import com.studentautomation.repository.StudentRepository;
-import com.studentautomation.repository.StudentSubjectRepository;
-import com.studentautomation.repository.SubjectRepository;
-import com.studentautomation.repository.TeacherRepository;
-import com.studentautomation.repository.TeacherSubjectRepository;
+import com.studentautomation.exception.ResourceNotFoundException;
+import com.studentautomation.mapper.StudentMapper;
+import com.studentautomation.repository.*;
 import com.studentautomation.service.AttendanceService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
-/**
- * Service implementation for attendance-related operations.
- *
- * Purpose:
- * This class contains the business logic for marking attendance,
- * preventing duplicate attendance, validating subject assignments,
- * processing bulk attendance, and retrieving attendance records.
- *
- * Important validations:
- * 1. The teacher profile must exist and be active.
- * 2. The student profile must exist and be active.
- * 3. The subject must exist and be active.
- * 4. The teacher must be assigned to the subject for the student's
- *    section and academic year.
- * 5. The student must be actively assigned to the subject.
- * 6. Duplicate attendance must not exist.
- *
- * @author Yashvanth
- */
 @Service
 public class AttendanceServiceImpl implements AttendanceService {
 
@@ -56,24 +28,16 @@ public class AttendanceServiceImpl implements AttendanceService {
     private final SubjectRepository subjectRepository;
     private final TeacherSubjectRepository teacherSubjectRepository;
     private final StudentSubjectRepository studentSubjectRepository;
+    private final AcademicClassRepository academicClassRepository;
 
-    /**
-     * Constructor for injecting required repositories.
-     *
-     * @param attendanceRepository repository for attendance operations
-     * @param studentRepository repository for student operations
-     * @param teacherRepository repository for teacher operations
-     * @param subjectRepository repository for subject operations
-     * @param teacherSubjectRepository repository for teacher-subject assignments
-     * @param studentSubjectRepository repository for student-subject assignments
-     */
     public AttendanceServiceImpl(
             AttendanceRepository attendanceRepository,
             StudentRepository studentRepository,
             TeacherRepository teacherRepository,
             SubjectRepository subjectRepository,
             TeacherSubjectRepository teacherSubjectRepository,
-            StudentSubjectRepository studentSubjectRepository
+            StudentSubjectRepository studentSubjectRepository,
+            AcademicClassRepository academicClassRepository
     ) {
         this.attendanceRepository = attendanceRepository;
         this.studentRepository = studentRepository;
@@ -81,509 +45,378 @@ public class AttendanceServiceImpl implements AttendanceService {
         this.subjectRepository = subjectRepository;
         this.teacherSubjectRepository = teacherSubjectRepository;
         this.studentSubjectRepository = studentSubjectRepository;
+        this.academicClassRepository = academicClassRepository;
     }
 
-    /**
-     * Marks attendance for a single student.
-     *
-     * Purpose:
-     * This method fetches the authenticated teacher, student, and subject,
-     * validates their active status and assignments, prevents duplicate
-     * attendance, and saves the attendance record.
-     *
-     * @param request attendance request data
-     * @param teacherEmail email of the authenticated teacher
-     * @return saved attendance details
-     */
     @Override
     @Transactional
-    public AttendanceResponseDTO markAttendance(
-            AttendanceRequestDTO request,
-            String teacherEmail
-    ) {
+    public AttendanceResponseDTO markAttendance(AttendanceRequestDTO request, String teacherEmail) {
+        if (request.attendanceDate() != null && request.attendanceDate().isAfter(LocalDate.now())) {
+            throw new InvalidRequestException("Cannot mark attendance for a future date");
+        }
+
         Teacher teacher = getActiveTeacher(teacherEmail);
-
         Subject subject = getActiveSubject(request.subjectId());
-
         Student student = studentRepository.findById(request.studentId())
-                .orElseThrow(() -> new InvalidRequestException(
-                        "Student not found with ID: " + request.studentId()
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Student not found"));
 
         validateActiveStudent(student);
-        validateStudentAcademicDetails(student);
 
-        validateTeacherSubjectAssignment(
-                teacher,
-                subject,
-                student
-        );
-
-        validateStudentSubjectAssignment(
-                student,
-                subject
-        );
-
-        boolean alreadyExists = attendanceRepository
-                .existsByStudent_IdAndSubject_IdAndAttendanceDateAndPeriodNumber(
-                        student.getId(),
-                        subject.getId(),
-                        request.attendanceDate(),
-                        request.periodNumber()
-                );
-
-        if (alreadyExists) {
-            throw new DuplicateResourceException(
-                    "Attendance already marked for this student, subject, date, and period"
-            );
+        if (attendanceRepository.existsByStudent_IdAndSubject_IdAndAttendanceDateAndPeriodNumber(
+                student.getId(), subject.getId(), request.attendanceDate(), request.periodNumber()
+        )) {
+            throw new DuplicateResourceException("Attendance already marked for this student, subject, date and period");
         }
 
         Attendance attendance = new Attendance();
         attendance.setStudent(student);
-        attendance.setMarkedBy(teacher);
         attendance.setSubject(subject);
+        attendance.setMarkedBy(teacher);
         attendance.setAttendanceDate(request.attendanceDate());
         attendance.setPeriodNumber(request.periodNumber());
         attendance.setStatus(request.status());
-        attendance.setRemarks(cleanRemarks(request.remarks()));
+        attendance.setRemarks(request.remarks());
 
-        Attendance savedAttendance = attendanceRepository.save(attendance);
-
-        return mapToResponse(savedAttendance);
+        return mapToDTO(attendanceRepository.save(attendance));
     }
 
-    /**
-     * Marks attendance for multiple students using one request.
-     *
-     * Purpose:
-     * This method validates every student record before saving.
-     * The subject and teacher are common for the complete request.
-     *
-     * Important rule:
-     * When any record contains an error, no attendance record
-     * from the request is saved.
-     *
-     * @param request bulk attendance request
-     * @param teacherEmail email of the authenticated teacher
-     * @return bulk attendance processing result
-     */
-    @Override
-    @Transactional
-    public BulkAttendanceResponseDTO markBulkAttendance(
-            BulkAttendanceRequestDTO request,
-            String teacherEmail
-    ) {
-        Teacher teacher = getActiveTeacher(teacherEmail);
-
-        Subject subject = getActiveSubject(request.subjectId());
-
-        List<BulkAttendanceErrorDTO> errors = new ArrayList<>();
-        List<Attendance> attendanceListToSave = new ArrayList<>();
-
-        /*
-         * Stores student IDs already processed inside this request.
-         *
-         * Purpose:
-         * Prevents the same student from appearing multiple times
-         * in one bulk attendance request.
-         */
-        Set<Long> studentIdsInRequest = new HashSet<>();
-
-        for (BulkAttendanceRecordRequestDTO record : request.records()) {
-
-            Long studentId = record.studentId();
-
-            if (studentId == null) {
-                errors.add(new BulkAttendanceErrorDTO(
-                        null,
-                        "studentId",
-                        "Student ID is required"
-                ));
-                continue;
-            }
-
-            if (!studentIdsInRequest.add(studentId)) {
-                errors.add(new BulkAttendanceErrorDTO(
-                        studentId,
-                        "studentId",
-                        "Duplicate student ID found inside request"
-                ));
-                continue;
-            }
-
-            Student student = studentRepository.findById(studentId)
-                    .orElse(null);
-
-            if (student == null) {
-                errors.add(new BulkAttendanceErrorDTO(
-                        studentId,
-                        "studentId",
-                        "Student not found"
-                ));
-                continue;
-            }
-
-            if (!Boolean.TRUE.equals(student.getActive())) {
-                errors.add(new BulkAttendanceErrorDTO(
-                        studentId,
-                        "studentId",
-                        "Student profile is inactive"
-                ));
-                continue;
-            }
-
-            if (student.getSection() == null
-                    || student.getSection().trim().isEmpty()) {
-
-                errors.add(new BulkAttendanceErrorDTO(
-                        studentId,
-                        "section",
-                        "Student section is not configured"
-                ));
-                continue;
-            }
-
-            if (student.getAcademicYear() == null
-                    || student.getAcademicYear().trim().isEmpty()) {
-
-                errors.add(new BulkAttendanceErrorDTO(
-                        studentId,
-                        "academicYear",
-                        "Student academic year is not configured"
-                ));
-                continue;
-            }
-
-            if (record.status() == null) {
-                errors.add(new BulkAttendanceErrorDTO(
-                        studentId,
-                        "status",
-                        "Attendance status is required"
-                ));
-                continue;
-            }
-
-            boolean teacherAssigned = teacherSubjectRepository
-                    .existsByTeacher_IdAndSubject_IdAndSectionIgnoreCaseAndAcademicYearAndActiveTrue(
-                            teacher.getId(),
-                            subject.getId(),
-                            student.getSection().trim(),
-                            student.getAcademicYear().trim()
-                    );
-
-            if (!teacherAssigned) {
-                errors.add(new BulkAttendanceErrorDTO(
-                        studentId,
-                        "teacherSubjectAssignment",
-                        "Teacher is not assigned to this subject for the student's section and academic year"
-                ));
-                continue;
-            }
-
-            boolean studentAssigned = studentSubjectRepository
-                    .existsByStudent_IdAndSubject_IdAndAcademicYearAndActiveTrue(
-                            student.getId(),
-                            subject.getId(),
-                            student.getAcademicYear().trim()
-                    );
-
-            if (!studentAssigned) {
-                errors.add(new BulkAttendanceErrorDTO(
-                        studentId,
-                        "studentSubjectAssignment",
-                        "Student is not actively assigned to this subject"
-                ));
-                continue;
-            }
-
-            boolean alreadyExists = attendanceRepository
-                    .existsByStudent_IdAndSubject_IdAndAttendanceDateAndPeriodNumber(
-                            student.getId(),
-                            subject.getId(),
-                            request.attendanceDate(),
-                            request.periodNumber()
-                    );
-
-            if (alreadyExists) {
-                errors.add(new BulkAttendanceErrorDTO(
-                        studentId,
-                        "attendance",
-                        "Attendance already marked for this student, subject, date, and period"
-                ));
-                continue;
-            }
-
-            Attendance attendance = new Attendance();
-            attendance.setStudent(student);
-            attendance.setMarkedBy(teacher);
-            attendance.setSubject(subject);
-            attendance.setAttendanceDate(request.attendanceDate());
-            attendance.setPeriodNumber(request.periodNumber());
-            attendance.setStatus(record.status());
-            attendance.setRemarks(cleanRemarks(record.remarks()));
-
-            attendanceListToSave.add(attendance);
-        }
-
-        /*
-         * No records are saved when at least one validation error exists.
-         *
-         * This preserves the all-or-nothing bulk attendance rule.
-         */
-        if (!errors.isEmpty()) {
-            return new BulkAttendanceResponseDTO(
-                    request.records().size(),
-                    0,
-                    errors.size(),
-                    errors
-            );
-        }
-
-        attendanceRepository.saveAll(attendanceListToSave);
-
-        return new BulkAttendanceResponseDTO(
-                request.records().size(),
-                attendanceListToSave.size(),
-                0,
-                List.of()
-        );
-    }
-
-    /**
-     * Gets attendance records marked by the authenticated teacher
-     * for a specified date.
-     *
-     * @param attendanceDate attendance date
-     * @param teacherEmail email of the authenticated teacher
-     * @return attendance records marked by the teacher
-     */
     @Override
     @Transactional(readOnly = true)
-    public List<AttendanceResponseDTO> getAttendanceByDateForTeacher(
-            LocalDate attendanceDate,
-            String teacherEmail
-    ) {
+    public List<AttendanceResponseDTO> getAttendanceByDateForTeacher(LocalDate attendanceDate, String teacherEmail) {
         Teacher teacher = getActiveTeacher(teacherEmail);
+        return attendanceRepository.findByMarkedBy_IdAndAttendanceDate(teacher.getId(), attendanceDate)
+                .stream().map(this::mapToDTO).toList();
+    }
 
-        return attendanceRepository
-                .findByMarkedBy_IdAndAttendanceDate(
-                        teacher.getId(),
-                        attendanceDate
-                )
+    @Override
+    @Transactional(readOnly = true)
+    public List<AttendanceResponseDTO> getAttendanceWithFilters(LocalDate date, Long subjectId, String section, Integer periodNumber, String teacherEmail) {
+        Teacher teacher = getActiveTeacher(teacherEmail);
+        return attendanceRepository.findByMarkedBy_IdAndAttendanceDate(teacher.getId(), date != null ? date : LocalDate.now())
                 .stream()
-                .map(this::mapToResponse)
+                .filter(a -> subjectId == null || a.getSubject().getId().equals(subjectId))
+                .filter(a -> section == null || (a.getStudent().getSection() != null && a.getStudent().getSection().equalsIgnoreCase(section)))
+                .filter(a -> periodNumber == null || a.getPeriodNumber().equals(periodNumber))
+                .map(this::mapToDTO)
                 .toList();
     }
 
-    /**
-     * Gets attendance records of the authenticated student.
-     *
-     * @param studentEmail email of the authenticated student
-     * @return attendance records belonging to the student
-     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<StudentResponseDTO> getAttendanceRoster(Long subjectId, String section, String academicYear, String teacherEmail) {
+        Subject subject = getActiveSubject(subjectId);
+        List<Student> students = studentRepository.findByDepartmentAndSemester(subject.getDepartment(), subject.getSemester())
+                .stream()
+                .filter(s -> Boolean.TRUE.equals(s.getActive()))
+                .filter(s -> section == null || (s.getSection() != null && s.getSection().equalsIgnoreCase(section)))
+                .filter(s -> academicYear == null || (s.getAcademicYear() != null && s.getAcademicYear().equalsIgnoreCase(academicYear)))
+                .toList();
+
+        return students.stream().map(StudentMapper::toResponseDTO).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AttendanceResponseDTO getAttendanceById(Long attendanceId) {
+        Attendance attendance = attendanceRepository.findById(attendanceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Attendance record not found"));
+        return mapToDTO(attendance);
+    }
+
+    @Override
+    @Transactional
+    public AttendanceResponseDTO updateAttendance(Long attendanceId, AttendanceRequestDTO request, String teacherEmail) {
+        if (request.attendanceDate() != null && request.attendanceDate().isAfter(LocalDate.now())) {
+            throw new InvalidRequestException("Cannot set attendance for a future date");
+        }
+
+        Teacher teacher = getActiveTeacher(teacherEmail);
+        Attendance attendance = attendanceRepository.findById(attendanceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Attendance record not found"));
+
+        if (attendance.getMarkedBy() != null && !attendance.getMarkedBy().getId().equals(teacher.getId())) {
+            throw new InvalidRequestException("You are not authorized to modify attendance marked by another teacher");
+        }
+
+        attendance.setStatus(request.status());
+        attendance.setRemarks(request.remarks());
+        return mapToDTO(attendanceRepository.save(attendance));
+    }
+
+    @Override
+    @Transactional
+    public AttendanceResponseDTO updateAttendanceStatus(Long attendanceId, String status, String teacherEmail) {
+        Teacher teacher = getActiveTeacher(teacherEmail);
+        Attendance attendance = attendanceRepository.findById(attendanceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Attendance record not found"));
+
+        if (attendance.getMarkedBy() != null && !attendance.getMarkedBy().getId().equals(teacher.getId())) {
+            throw new InvalidRequestException("You are not authorized to modify attendance marked by another teacher");
+        }
+
+        AttendanceStatus newStatus = AttendanceStatus.valueOf(status.trim().toUpperCase());
+        attendance.setStatus(newStatus);
+        return mapToDTO(attendanceRepository.save(attendance));
+    }
+
+    @Override
+    @Transactional
+    public void deleteAttendance(Long attendanceId, String teacherEmail) {
+        Teacher teacher = getActiveTeacher(teacherEmail);
+        Attendance attendance = attendanceRepository.findById(attendanceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Attendance record not found"));
+
+        if (attendance.getMarkedBy() != null && !attendance.getMarkedBy().getId().equals(teacher.getId())) {
+            throw new InvalidRequestException("You are not authorized to delete attendance marked by another teacher");
+        }
+
+        attendanceRepository.delete(attendance);
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<AttendanceResponseDTO> getMyAttendance(String studentEmail) {
-
         Student student = studentRepository.findByUser_Email(studentEmail)
-                .orElseThrow(() -> new InvalidRequestException(
-                        "Student profile not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Student profile not found"));
+        return attendanceRepository.findByStudent_Id(student.getId()).stream().map(this::mapToDTO).toList();
+    }
 
-        validateActiveStudent(student);
+    @Override
+    @Transactional(readOnly = true)
+    public List<AttendanceResponseDTO> getMyAttendanceFiltered(Long subjectId, LocalDate fromDate, LocalDate toDate, String studentEmail) {
+        Student student = studentRepository.findByUser_Email(studentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Student profile not found"));
 
         return attendanceRepository.findByStudent_Id(student.getId())
                 .stream()
-                .map(this::mapToResponse)
+                .filter(a -> subjectId == null || a.getSubject().getId().equals(subjectId))
+                .filter(a -> fromDate == null || !a.getAttendanceDate().isBefore(fromDate))
+                .filter(a -> toDate == null || !a.getAttendanceDate().isAfter(toDate))
+                .map(this::mapToDTO)
                 .toList();
     }
 
-    /**
-     * Fetches and validates the authenticated teacher.
-     *
-     * @param teacherEmail email of the authenticated teacher
-     * @return active teacher entity
-     */
-    private Teacher getActiveTeacher(String teacherEmail) {
-
-        Teacher teacher = teacherRepository.findByUser_Email(teacherEmail)
-                .orElseThrow(() -> new InvalidRequestException(
-                        "Teacher profile not found"
-                ));
-
-        if (!Boolean.TRUE.equals(teacher.getActive())) {
-            throw new InvalidRequestException(
-                    "Teacher profile is inactive"
-            );
-        }
-
-        return teacher;
+    @Override
+    @Transactional(readOnly = true)
+    public StudentAttendanceSummaryDTO getMyAttendanceSummary(String studentEmail) {
+        Student student = studentRepository.findByUser_Email(studentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Student profile not found"));
+        List<Attendance> records = attendanceRepository.findByStudent_Id(student.getId());
+        return calculateSummary(student, null, records);
     }
 
-    /**
-     * Fetches and validates the selected subject.
-     *
-     * @param subjectId ID of the selected subject
-     * @return active subject entity
-     */
-    private Subject getActiveSubject(Long subjectId) {
+    @Override
+    @Transactional(readOnly = true)
+    public StudentAttendanceSummaryDTO getMySubjectAttendanceSummary(Long subjectId, String studentEmail) {
+        Student student = studentRepository.findByUser_Email(studentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Student profile not found"));
+        Subject subject = getActiveSubject(subjectId);
+        List<Attendance> records = attendanceRepository.findByStudent_Id(student.getId())
+                .stream()
+                .filter(a -> a.getSubject().getId().equals(subjectId))
+                .toList();
 
-        Subject subject = subjectRepository.findById(subjectId)
-                .orElseThrow(() -> new InvalidRequestException(
-                        "Subject not found with ID: " + subjectId
-                ));
-
-        if (!Boolean.TRUE.equals(subject.getActive())) {
-            throw new InvalidRequestException(
-                    "Subject is inactive"
-            );
-        }
-
-        return subject;
+        return calculateSummary(student, subject, records);
     }
 
-    /**
-     * Validates whether a student profile is active.
-     *
-     * @param student student entity to validate
-     */
-    private void validateActiveStudent(Student student) {
-
-        if (!Boolean.TRUE.equals(student.getActive())) {
-            throw new InvalidRequestException(
-                    "Student profile is inactive"
-            );
-        }
-    }
-
-    /**
-     * Validates the academic information required for checking
-     * teacher-subject assignments.
-     *
-     * @param student student entity to validate
-     */
-    private void validateStudentAcademicDetails(Student student) {
-
-        if (student.getSection() == null
-                || student.getSection().trim().isEmpty()) {
-
-            throw new InvalidRequestException(
-                    "Student section is not configured"
-            );
+    @Override
+    @Transactional
+    public BulkAttendanceResponseDTO markBulkAttendance(BulkAttendanceRequestDTO request, String teacherEmail) {
+        if (request.attendanceDate() != null && request.attendanceDate().isAfter(LocalDate.now())) {
+            throw new InvalidRequestException("Cannot mark attendance for a future date");
         }
 
-        if (student.getAcademicYear() == null
-                || student.getAcademicYear().trim().isEmpty()) {
+        Teacher teacher = getActiveTeacher(teacherEmail);
+        Subject subject = getActiveSubject(request.subjectId());
 
-            throw new InvalidRequestException(
-                    "Student academic year is not configured"
-            );
-        }
-    }
+        List<AttendanceResponseDTO> successfulRecords = new ArrayList<>();
+        List<BulkAttendanceErrorDTO> errors = new ArrayList<>();
 
-    /**
-     * Validates whether the teacher is assigned to the selected
-     * subject for the student's section and academic year.
-     *
-     * @param teacher teacher marking attendance
-     * @param subject selected subject
-     * @param student student whose attendance is being marked
-     */
-    private void validateTeacherSubjectAssignment(
-            Teacher teacher,
-            Subject subject,
-            Student student
-    ) {
-        boolean teacherAssigned = teacherSubjectRepository
-                .existsByTeacher_IdAndSubject_IdAndSectionIgnoreCaseAndAcademicYearAndActiveTrue(
-                        teacher.getId(),
+        for (BulkAttendanceRecordRequestDTO record : request.records()) {
+            try {
+                AttendanceRequestDTO dto = new AttendanceRequestDTO(
+                        record.studentId(),
+                        request.attendanceDate(),
                         subject.getId(),
-                        student.getSection().trim(),
-                        student.getAcademicYear().trim()
+                        request.periodNumber(),
+                        record.status(),
+                        record.remarks()
                 );
 
-        if (!teacherAssigned) {
-            throw new InvalidRequestException(
-                    "Teacher is not assigned to subject "
-                            + subject.getSubjectCode()
-                            + " for section "
-                            + student.getSection()
-                            + " and academic year "
-                            + student.getAcademicYear()
-            );
+                successfulRecords.add(markAttendance(dto, teacherEmail));
+            } catch (Exception e) {
+                errors.add(new BulkAttendanceErrorDTO(record.studentId(), "attendanceStatus", e.getMessage()));
+            }
         }
-    }
 
-    /**
-     * Validates whether the student has an active assignment
-     * to the selected subject.
-     *
-     * @param student student whose attendance is being marked
-     * @param subject selected subject
-     */
-    private void validateStudentSubjectAssignment(
-            Student student,
-            Subject subject
-    ) {
-        boolean studentAssigned = studentSubjectRepository
-                .existsByStudent_IdAndSubject_IdAndAcademicYearAndActiveTrue(
-                        student.getId(),
-                        subject.getId(),
-                        student.getAcademicYear().trim()
-                );
-
-        if (!studentAssigned) {
-            throw new InvalidRequestException(
-                    "Student is not actively assigned to subject "
-                            + subject.getSubjectCode()
-                            + " for academic year "
-                            + student.getAcademicYear()
-            );
-        }
-    }
-
-    /**
-     * Converts an Attendance entity into AttendanceResponseDTO.
-     *
-     * @param attendance attendance entity
-     * @return attendance response DTO
-     */
-    private AttendanceResponseDTO mapToResponse(Attendance attendance) {
-
-        Student student = attendance.getStudent();
-        Teacher teacher = attendance.getMarkedBy();
-        Subject subject = attendance.getSubject();
-
-        return new AttendanceResponseDTO(
-                attendance.getId(),
-                student.getId(),
-                student.getName(),
-                teacher.getId(),
-                teacher.getName(),
-                subject.getId(),
-                subject.getSubjectCode(),
-                subject.getSubjectName(),
-                attendance.getAttendanceDate(),
-                attendance.getPeriodNumber(),
-                attendance.getStatus(),
-                attendance.getRemarks(),
-                attendance.getCreatedAt(),
-                attendance.getUpdatedAt()
+        return new BulkAttendanceResponseDTO(
+                request.records().size(),
+                successfulRecords.size(),
+                errors.size(),
+                errors
         );
     }
 
-    /**
-     * Trims optional remarks and converts empty text to null.
-     *
-     * @param remarks optional attendance remarks
-     * @return cleaned remarks or null
-     */
-    private String cleanRemarks(String remarks) {
+    @Override
+    @Transactional(readOnly = true)
+    public List<AttendanceResponseDTO> getAllAttendance() {
+        return attendanceRepository.findAll().stream().map(this::mapToDTO).toList();
+    }
 
-        if (remarks == null || remarks.trim().isEmpty()) {
-            return null;
+    @Override
+    @Transactional(readOnly = true)
+    public List<AttendanceResponseDTO> getAttendanceByStudentId(Long studentId) {
+        return attendanceRepository.findByStudent_Id(studentId).stream().map(this::mapToDTO).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AttendanceResponseDTO> getAttendanceByClassId(Long classId) {
+        AcademicClass ac = academicClassRepository.findById(classId)
+                .orElseThrow(() -> new ResourceNotFoundException("Class not found"));
+
+        List<Student> students = studentRepository.findByDepartmentAndSemester(ac.getDepartmentCode(), ac.getSemester())
+                .stream()
+                .filter(s -> s.getSection() != null && s.getSection().equalsIgnoreCase(ac.getSection()))
+                .toList();
+
+        List<AttendanceResponseDTO> list = new ArrayList<>();
+        for (Student s : students) {
+            list.addAll(attendanceRepository.findByStudent_Id(s.getId()).stream().map(this::mapToDTO).toList());
+        }
+        return list;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AttendanceResponseDTO> getAttendanceBySubjectId(Long subjectId) {
+        return attendanceRepository.findAll()
+                .stream()
+                .filter(a -> a.getSubject().getId().equals(subjectId))
+                .map(this::mapToDTO)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<StudentAttendanceSummaryDTO> getAttendanceShortage() {
+        List<Student> allStudents = studentRepository.findAll();
+        List<StudentAttendanceSummaryDTO> shortageList = new ArrayList<>();
+
+        for (Student s : allStudents) {
+            List<Attendance> records = attendanceRepository.findByStudent_Id(s.getId());
+            if (!records.isEmpty()) {
+                StudentAttendanceSummaryDTO summary = calculateSummary(s, null, records);
+                if (summary.attendancePercentage() < 75.0) {
+                    shortageList.add(summary);
+                }
+            }
+        }
+        return shortageList;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AttendanceReportDTO getAttendanceReport() {
+        List<Attendance> all = attendanceRepository.findAll();
+        if (all.isEmpty()) {
+            return new AttendanceReportDTO(0, 0, 0, 0, 0, 0.0, 0);
         }
 
-        return remarks.trim();
+        int p = 0, a = 0, l = 0, e = 0;
+        for (Attendance att : all) {
+            if (att.getStatus() == AttendanceStatus.PRESENT) p++;
+            else if (att.getStatus() == AttendanceStatus.ABSENT) a++;
+            else if (att.getStatus() == AttendanceStatus.LATE) l++;
+            else if (att.getStatus() == AttendanceStatus.EXCUSED) e++;
+        }
+
+        double pct = (double) p / all.size() * 100.0;
+        int shortageCount = getAttendanceShortage().size();
+
+        return new AttendanceReportDTO(
+                all.size(), p, a, l, e,
+                Math.round(pct * 100.0) / 100.0,
+                shortageCount
+        );
+    }
+
+    private StudentAttendanceSummaryDTO calculateSummary(Student student, Subject subject, List<Attendance> records) {
+        int total = records.size();
+        int present = 0, absent = 0, late = 0, excused = 0;
+
+        for (Attendance r : records) {
+            if (r.getStatus() == AttendanceStatus.PRESENT) present++;
+            else if (r.getStatus() == AttendanceStatus.ABSENT) absent++;
+            else if (r.getStatus() == AttendanceStatus.LATE) late++;
+            else if (r.getStatus() == AttendanceStatus.EXCUSED) excused++;
+        }
+
+        double pct = total > 0 ? ((double) present / total) * 100.0 : 0.0;
+
+        int classesNeeded = 0;
+        if (pct < 75.0 && total > 0) {
+            double needed = (0.75 * total - present) / 0.25;
+            classesNeeded = (int) Math.ceil(needed);
+        }
+
+        return new StudentAttendanceSummaryDTO(
+                student.getId(),
+                student.getRegNo(),
+                student.getName(),
+                subject != null ? subject.getId() : null,
+                subject != null ? subject.getSubjectCode() : null,
+                subject != null ? subject.getSubjectName() : null,
+                total,
+                present,
+                absent,
+                late,
+                excused,
+                Math.round(pct * 100.0) / 100.0,
+                classesNeeded
+        );
+    }
+
+    private Teacher getActiveTeacher(String email) {
+        Teacher teacher = teacherRepository.findByUser_Email(email)
+                .orElseThrow(() -> new ResourceNotFoundException("Teacher profile not found"));
+        if (Boolean.FALSE.equals(teacher.getActive())) {
+            throw new InvalidRequestException("Teacher account is inactive");
+        }
+        return teacher;
+    }
+
+    private Subject getActiveSubject(Long subjectId) {
+        Subject subject = subjectRepository.findById(subjectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Subject not found"));
+        if (Boolean.FALSE.equals(subject.getActive())) {
+            throw new InvalidRequestException("Subject is inactive");
+        }
+        return subject;
+    }
+
+    private void validateActiveStudent(Student student) {
+        if (Boolean.FALSE.equals(student.getActive())) {
+            throw new InvalidRequestException("Student profile is inactive");
+        }
+    }
+
+    private AttendanceResponseDTO mapToDTO(Attendance a) {
+        return new AttendanceResponseDTO(
+                a.getId(),
+                a.getStudent().getId(),
+                a.getStudent().getName(),
+                a.getMarkedBy().getId(),
+                a.getMarkedBy().getName(),
+                a.getSubject().getId(),
+                a.getSubject().getSubjectCode(),
+                a.getSubject().getSubjectName(),
+                a.getAttendanceDate(),
+                a.getPeriodNumber(),
+                a.getStatus(),
+                a.getRemarks(),
+                a.getCreatedAt(),
+                a.getUpdatedAt()
+        );
     }
 }
